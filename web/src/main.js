@@ -54,7 +54,8 @@ async function loadCells() {
 loadCells().catch((err) => { console.error(err); hud.textContent = String(err); });
 function update(dt) { /* nothing to animate yet */ }
 // ---- CONTENT END ----
- 
+ import { projectByHand } from './experiments.js';   // put this at the TOP of main.js
+window.cs.projectByHand = projectByHand;
 // ---- HUD and render loop ----
 const hud = document.getElementById('hud');
 let hudInfo = '';
