@@ -1,24 +1,38 @@
 varying vec3 vColor;
+varying float vValue;
+
+uniform sampler2D uLut;      // 1D lookup texture for sequential colormap
+uniform float uMode;         // 0.0 = cluster, 1.0 = uncertainty, 2.0 = gene expression
+uniform float uCvd;          // 0.0 = normal, 1.0 = simulate deuteranopia
+
+// Deuteranopia simulation matrix (Machado et al.)
+const mat3 DEUTAN = mat3(
+   0.367322,  0.280085, -0.011820,
+   0.860646,  0.672501,  0.042940,
+  -0.227968,  0.047413,  0.968881
+);
+
+vec3 toLinear(vec3 c) { return pow(c, vec3(2.2)); }
+vec3 toSRGB(vec3 c)   { return pow(clamp(c, 0.0, 1.0), vec3(1.0 / 2.2)); }
 
 void main() {
     vec2 p = gl_PointCoord * 2.0 - 1.0;
-    float r2 = dot(p, p);
     
-    // Cut square into a disc
-    if (r2 > 1.0) discard;
+    // Cut square into a flat disc
+    if (dot(p, p) > 1.0) discard;
 
-    // Fake sphere normal: z = sqrt(1 - x^2 - y^2)
-    vec3 normal = vec3(p, sqrt(1.0 - r2));
-    
-    // Direction of the light (e.g., coming from top-right-front)
-    vec3 lightDir = normalize(vec3(1.0, 1.0, 1.5));
-    
-    // Diffuse lighting: dot product of normal and light direction
-    float diffuse = max(dot(normal, lightDir), 0.0);
-    
-    // Add ambient light so the dark side isn't pitch black
-    float ambient = 0.4;
-    float lighting = ambient + (1.0 - ambient) * diffuse;
+    vec3 finalColor = vColor;
 
-    gl_FragColor = vec4(vColor * lighting, 1.0);
+    // If gene expression mode (uMode == 2.0), sample from the 1D LUT texture
+    if (uMode > 1.5) {
+        float t = (vValue * 255.0 + 0.5) / 256.0;
+        finalColor = texture2D(uLut, vec2(t, 0.5)).rgb;
+    }
+
+    // CVD Simulation check
+    if (uCvd > 0.5) {
+        finalColor = toSRGB(DEUTAN * toLinear(finalColor));
+    }
+
+    gl_FragColor = vec4(finalColor, 1.0);
 }

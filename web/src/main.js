@@ -14,7 +14,6 @@ document.getElementById('app').appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x101114);
 
-// Add lights for the instanced spheres (Phong material)
 scene.add(new THREE.AmbientLight(0xffffff, 0.5));
 const dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
 dirLight.position.set(5, 5, 5);
@@ -44,6 +43,9 @@ const uniforms = {
   uPxPerUnit: { value: 1.0 },
   uHighlight: { value: -1.0 },
   uPalette:   { value: PALETTE },
+  uMode:      { value: 0.0 }, // 0.0 = cluster, 1.0 = uncertainty, 2.0 = gene
+  uCvd:       { value: 0.0 }, // 0.0 = normal, 1.0 = simulation active
+  uLut:       { value: null } // will hold our Cividis texture
 };
  
 function updatePointScale() {
@@ -53,27 +55,38 @@ function updatePointScale() {
 window.addEventListener('resize', updatePointScale);
 updatePointScale();
  
-let currentMesh = null; // Can be THREE.Points or THREE.InstancedMesh
-let renderMode = 'points'; // 'points' or 'spheres'
+let currentMesh = null;
+let renderMode = 'points';
 let currentEmbeddingKey = 'pca';
 let material = null, manifest = null, clusterCodes = null, markers = null;
  
+// ---- Initialization: Load Manifest, LUT, and Populate Dropdowns ----
+async function initApp() {
+  manifest = await loadManifest();
+  if (!markers) markers = await loadJSON('/data/' + manifest.markers);
+  populateGeneDropdown();
+
+  const lutBytes = await loadU8('/data/' + manifest.lut);
+  const lutTex = new THREE.DataTexture(lutBytes, 256, 1, THREE.RGBAFormat);
+  lutTex.needsUpdate = true;
+  uniforms.uLut.value = lutTex;
+
+  await loadCells('pca');
+}
+
 async function loadCells(embeddingKey = 'pca') {
-  if (!manifest) manifest = await loadManifest();
   currentEmbeddingKey = embeddingKey;
   const embMeta = manifest.embeddings[embeddingKey];
   
   const positions = await loadF32('/data/' + embMeta.file);
   const clusterFile = embMeta.synthetic ? embMeta.cluster_file : manifest.obs.cluster.file;
   clusterCodes = await loadU8('/data/' + clusterFile);
-  if (!markers) markers = await loadJSON('/data/' + manifest.markers);
  
   const n_cells = embMeta.n_cells || manifest.n_cells;
 
   if (positions.length !== n_cells * 3) throw new Error('positions: size mismatch');
   if (clusterCodes.length !== n_cells) throw new Error('cluster codes: size mismatch');
 
-  // Clean up old mesh
   if (currentMesh) {
     scene.remove(currentMesh);
     if (currentMesh.geometry) currentMesh.geometry.dispose();
@@ -84,15 +97,18 @@ async function loadCells(embeddingKey = 'pca') {
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('aCluster', new THREE.BufferAttribute(clusterCodes, 1));
- 
+
     material = new THREE.ShaderMaterial({ uniforms, vertexShader, fragmentShader });
     currentMesh = new THREE.Points(geometry, material);
     scene.add(currentMesh);
     window.cs.points = currentMesh;
   } else {
-    // Instanced Spheres Variant
-    const sphereGeo = new THREE.IcosahedronGeometry(0.015, 1);
-    const sphereMat = new THREE.MeshPhongMaterial({ shininess: 40 });
+    // Smooth spheres with professional lighting response
+    const sphereGeo = new THREE.SphereGeometry(0.015, 16, 16);
+    const sphereMat = new THREE.MeshStandardMaterial({ 
+      roughness: 0.3, 
+      metalness: 0.1 
+    });
     
     currentMesh = new THREE.InstancedMesh(sphereGeo, sphereMat, n_cells);
     const matrix = new THREE.Matrix4();
@@ -120,7 +136,7 @@ async function loadCells(embeddingKey = 'pca') {
   hudInfo = `${n_cells.toLocaleString()} cells · ${tag} · ${renderMode.toUpperCase()}`;
 }
  
-loadCells('pca').catch((err) => { console.error(err); hud.textContent = String(err); });
+initApp().catch((err) => { console.error(err); hud.textContent = String(err); });
 function update(dt) { /* nothing to animate yet */ }
 
 const tooltip = document.getElementById('tooltip');
@@ -155,7 +171,6 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   const hits = raycaster.intersectObject(currentMesh);
 
   if (hits.length > 0) {
-    // Points use hits[0].index, InstancedMesh uses hits[0].instanceId
     const cellIndex = (renderMode === 'spheres') ? hits[0].instanceId : hits[0].index;
     if (cellIndex !== undefined) {
       showTooltip(cellIndex, e.clientX, e.clientY);
@@ -166,7 +181,46 @@ renderer.domElement.addEventListener('pointermove', (e) => {
     showTooltip(-1, 0, 0);
   }
 });
-// ---- CONTENT END ----
+
+function populateGeneDropdown() {
+  const select = document.getElementById('geneSelect');
+  if (!manifest || !manifest.genes) return;
+  select.innerHTML = Object.keys(manifest.genes).map(g => `<option value="${g}">${g}</option>`).join('');
+}
+
+// ---- UI Event Listeners ----
+document.getElementById('colorModeSelect').addEventListener('change', async (e) => {
+  const mode = e.target.value;
+  const geneSelect = document.getElementById('geneSelect');
+  geneSelect.style.display = (mode === 'gene') ? 'inline-block' : 'none';
+
+  if (!currentMesh) return;
+
+  if (mode === 'cluster') {
+    uniforms.uMode.value = 0.0;
+  } else if (mode === 'uncertainty') {
+    uniforms.uMode.value = 1.0;
+    const uncBuffer = await loadU8('/data/' + manifest.obs.uncertainty.file);
+    currentMesh.geometry.setAttribute('aValue', new THREE.BufferAttribute(uncBuffer, 1, true));
+  } else if (mode === 'gene') {
+    geneSelect.dispatchEvent(new Event('change'));
+  }
+});
+
+document.getElementById('geneSelect').addEventListener('change', async (e) => {
+  const gene = e.target.value;
+  if (!manifest || !manifest.genes[gene] || !currentMesh) return;
+
+  const geneMeta = manifest.genes[gene];
+  const geneBuffer = await loadU8('/data/' + geneMeta.file);
+  
+  uniforms.uMode.value = 2.0;
+  currentMesh.geometry.setAttribute('aValue', new THREE.BufferAttribute(geneBuffer, 1, true));
+});
+
+document.getElementById('cvdToggle').addEventListener('change', (e) => {
+  uniforms.uCvd.value = e.target.checked ? 1.0 : 0.0;
+});
 
 document.getElementById('sizeSlider').addEventListener('input', (e) => {
   uniforms.uWorldSize.value = parseFloat(e.target.value);
@@ -205,4 +259,112 @@ function animate(now) {
     frames = 0; last = now;
   }
 }
-requestAnimationFrame(animate); 
+requestAnimationFrame(animate);
+
+document.getElementById('toggleDotPlot').addEventListener('click', () => {
+  const panel = document.getElementById('dotplotPanel');
+  const isHidden = panel.style.display === 'none';
+  panel.style.display = isHidden ? 'block' : 'none';
+  if (isHidden) renderDotPlot();
+});
+
+document.getElementById('closeDotPlot').addEventListener('click', () => {
+  document.getElementById('dotplotPanel').style.display = 'none';
+});
+
+async function renderDotPlot() {
+  const container = document.getElementById('dotplotContainer');
+  if (container.innerHTML !== '') return; // Already rendered
+
+  const res = await fetch('/data/dotplot.json');
+  const data = await res.json();
+  const lut = await loadU8('/data/lut_cividis.u8');
+
+  const { clusters, genes, mean, frac, maxMean } = data;
+  const cellW = 28;
+  const cellH = 22;
+  const padLeft = 75;
+  const padTop = 35;
+  const width = padLeft + clusters.length * cellW + 10;
+  const height = padTop + genes.length * cellH + 10;
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('width', width);
+  svg.setAttribute('height', height);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', 'Dot plot showing mean expression and fraction expressing for marker genes across clusters');
+
+  // Column headers (Clusters) — clicking highlights cluster in 3D
+  clusters.forEach((cName, ci) => {
+    const x = padLeft + ci * cellW + cellW / 2;
+    const text = document.createElementNS(NS, 'text');
+    text.setAttribute('x', x);
+    text.setAttribute('y', padTop - 10);
+    text.setAttribute('fill', '#ddd');
+    text.setAttribute('text-anchor', 'middle');
+    text.setAttribute('font-size', '11');
+    text.style.cursor = 'pointer';
+    text.textContent = `C${cName}`;
+    text.addEventListener('click', () => {
+      uniforms.uHighlight.value = (uniforms.uHighlight.value === ci) ? -1.0 : ci;
+    });
+    svg.appendChild(text);
+  });
+
+  // Rows (Genes) & Dots
+  genes.forEach((gene, gi) => {
+    const y = padTop + gi * cellH + cellH / 2;
+
+    const label = document.createElementNS(NS, 'text');
+    label.setAttribute('x', padLeft - 8);
+    label.setAttribute('y', y + 4);
+    label.setAttribute('fill', '#ddd');
+    label.setAttribute('text-anchor', 'end');
+    label.setAttribute('font-size', '11');
+    label.style.cursor = 'pointer';
+    label.textContent = gene;
+    label.addEventListener('click', () => {
+      const modeSelect = document.getElementById('colorModeSelect');
+      const geneSelect = document.getElementById('geneSelect');
+      if (manifest && manifest.genes[gene]) {
+        modeSelect.value = 'gene';
+        geneSelect.style.display = 'inline-block';
+        geneSelect.value = gene;
+        geneSelect.dispatchEvent(new Event('change'));
+      }
+    });
+    svg.appendChild(label);
+
+    clusters.forEach((cName, ci) => {
+      const x = padLeft + ci * cellW + cellW / 2;
+      const f = frac[ci][gi];
+      const m = mean[ci][gi];
+
+      const maxR = (Math.min(cellW, cellH) / 2) - 2;
+      const r = maxR * Math.sqrt(f);
+
+      const lutIdx = Math.min(255, Math.round((m / maxMean) * 255));
+      const color = `rgb(${lut[4 * lutIdx]}, ${lut[4 * lutIdx + 1]}, ${lut[4 * lutIdx + 2]})`;
+
+      const circle = document.createElementNS(NS, 'circle');
+      circle.setAttribute('cx', x);
+      circle.setAttribute('cy', y);
+      circle.setAttribute('r', Math.max(1.5, r));
+      circle.setAttribute('fill', color);
+      circle.style.cursor = 'pointer';
+
+      const title = document.createElementNS(NS, 'title');
+      title.textContent = `Cluster ${cName} · ${gene}: ${(f * 100).toFixed(0)}% expressing, mean ${m.toFixed(2)}`;
+      circle.appendChild(title);
+
+      circle.addEventListener('click', () => {
+        uniforms.uHighlight.value = (uniforms.uHighlight.value === ci) ? -1.0 : ci;
+      });
+
+      svg.appendChild(circle);
+    });
+  });
+
+  container.appendChild(svg);
+}
