@@ -10,10 +10,20 @@
     <div id="app"></div>
     <div id="hud">
       <div id="hud-text"></div>
-      <label style="display:block; margin-top:8px;">
-        Point Size: <input type="range" id="sizeSlider" min="0.005" max="0.1" step="0.005" value="0.03">
+      <div style="margin-top: 8px;">
+        Dataset: 
+        <select id="datasetSelect">
+          <option value="pca">PCA (2.6k)</option>
+          <option value="synth_100k">Synthetic 100k</option>
+          <option value="synth_500k">Synthetic 500k</option>
+        </select>
+        <button id="modeToggle" style="margin-left: 8px;">Switch to Spheres</button>
+      </div>
+      <label style="display:block; margin-top:6px;">
+        Size: <input type="range" id="sizeSlider" min="0.005" max="0.1" step="0.005" value="0.03">
       </label>
     </div>
+    <div id="tooltip"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>
