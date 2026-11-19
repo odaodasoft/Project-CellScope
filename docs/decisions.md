@@ -44,3 +44,17 @@ All newly exported arrays preserve the exact cell ordering (`n_cells`) establish
 * **`obs_uncertainty.u8`** (`uint8`, shape `(N,)`): Derived per-cell structural uncertainty score ($1 - \text{k-NN purity}$, $k = 15$ in 30D PCA space), quantized to `0–255`.
 * **`lut_cividis.u8`** (`uint8`, shape `(256, 4)`): RGBA lookup table for the `cividis` sequential colormap, shared between the WebGL fragment shader and the 2D SVG dot plot.
 * **`dotplot.json`** (`JSON`): Pre-aggregated cluster-by-gene summary containing cluster IDs, marker gene symbols, mean log-normalised expression (`mean`), expressing cell fraction (`frac`), and global `maxMean`.
+
+## R7 — Peer Test Log
+
+* **Participant:** [Classmate Name]
+* **Date:** [YYYY-MM-DD]
+* **Setup:** Observed silently while participant solved the three abstracted tasks phrased as domain questions (no UI hints given).
+
+| Task | Domain Prompt Given | Time Taken | Errors / Hesitations | Observation & Fix Applied |
+| :--- | :--- | :--- | :--- | :--- |
+| **Task 1 (T2)** | *"Where are the cytotoxic T cells expressing CD8A?"* | [e.g., 18s] | [e.g., Hesitated briefly before switching Color Mode from Cluster to Gene] | [e.g., Kept Gene dropdown visible or clearly labeled] |
+| **Task 2 (T4)** | *"Which marker genes distinguish cluster 3 from cluster 5?"* | [e.g., 25s] | [e.g., Opened 2D Dot Plot and compared columns C3 and C5 directly] | [e.g., Confirmed dot plot click-to-highlight worked smoothly] |
+| **Task 3 (T9)** | *"Which cells are in ambiguous boundary regions where cluster assignment is most uncertain?"* | [e.g., 15s] | [e.g., Switched to Uncertainty mode and spotted greyed-out cells along cluster borders] | [e.g., Added explicit note in legend explaining desaturation] |
+
+* **Takeaway fed back into design:** [Summarize 1–2 concrete adjustments made after watching the test, or note that all three tasks were solved cleanly without errors.]
