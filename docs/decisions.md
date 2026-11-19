@@ -34,3 +34,13 @@
 - **Choice 1 (CVD):** Shader-based Deuteranopia simulation toggle using the Machado et al. matrix. Checked via visual inspection.
 - **Choice 2 (Keyboard Nav):** All dropdowns and buttons are focusable via `Tab` with visible focus rings, enabling complete navigation without a mouse. Checked via manual keyboard-only walkthrough.
 - **Choice 3 (Text Alternative):** SVG dot plot and container include semantic `aria-label` attributes for screen reader support. Checked via DOM inspection.
+
+## Data Contract Change Log — Part 3
+
+All newly exported arrays preserve the exact cell ordering (`n_cells`) established in Part 1.
+
+* **`genes/<symbol>.u8`** (`uint8`, shape `(N,)`): Per-cell log-normalised expression values scaled to `0–255` using 99th-percentile ($p_{99}$) clipping over non-zero cells (`0` = no counts detected, `255` = $\ge p_{99}$).
+* **`genes.json`** (`JSON`): Gene index mapping each exported gene symbol to its binary file path (`file`), scaling method (`p99`), and clip ceiling (`hi`) in log-normalised units for legend rendering.
+* **`obs_uncertainty.u8`** (`uint8`, shape `(N,)`): Derived per-cell structural uncertainty score ($1 - \text{k-NN purity}$, $k = 15$ in 30D PCA space), quantized to `0–255`.
+* **`lut_cividis.u8`** (`uint8`, shape `(256, 4)`): RGBA lookup table for the `cividis` sequential colormap, shared between the WebGL fragment shader and the 2D SVG dot plot.
+* **`dotplot.json`** (`JSON`): Pre-aggregated cluster-by-gene summary containing cluster IDs, marker gene symbols, mean log-normalised expression (`mean`), expressing cell fraction (`frac`), and global `maxMean`.

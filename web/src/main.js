@@ -134,6 +134,7 @@ async function loadCells(embeddingKey = 'pca') {
 
   const tag = embMeta.synthetic ? 'SYNTHETIC' : 'PCA';
   hudInfo = `${n_cells.toLocaleString()} cells · ${tag} · ${renderMode.toUpperCase()}`;
+  updateLegend(); // <-- Spot 1: refreshes legend after loading cells
 }
  
 initApp().catch((err) => { console.error(err); hud.textContent = String(err); });
@@ -205,6 +206,7 @@ document.getElementById('colorModeSelect').addEventListener('change', async (e) 
   } else if (mode === 'gene') {
     geneSelect.dispatchEvent(new Event('change'));
   }
+  updateLegend(); // <-- Spot 2: refreshes legend when switching color mode
 });
 
 document.getElementById('geneSelect').addEventListener('change', async (e) => {
@@ -216,6 +218,7 @@ document.getElementById('geneSelect').addEventListener('change', async (e) => {
   
   uniforms.uMode.value = 2.0;
   currentMesh.geometry.setAttribute('aValue', new THREE.BufferAttribute(geneBuffer, 1, true));
+  updateLegend(); // <-- Spot 3: refreshes legend when picking a gene
 });
 
 document.getElementById('cvdToggle').addEventListener('change', (e) => {
@@ -308,6 +311,7 @@ async function renderDotPlot() {
     text.textContent = `C${cName}`;
     text.addEventListener('click', () => {
       uniforms.uHighlight.value = (uniforms.uHighlight.value === ci) ? -1.0 : ci;
+      updateLegend(); // <-- Spot 4a: updates highlight state in legend
     });
     svg.appendChild(text);
   });
@@ -360,6 +364,7 @@ async function renderDotPlot() {
 
       circle.addEventListener('click', () => {
         uniforms.uHighlight.value = (uniforms.uHighlight.value === ci) ? -1.0 : ci;
+        updateLegend(); // <-- Spot 4b: updates highlight state in legend
       });
 
       svg.appendChild(circle);
@@ -367,4 +372,95 @@ async function renderDotPlot() {
   });
 
   container.appendChild(svg);
+}
+
+function getClusterCount(clusterId) {
+  if (!clusterCodes) return 0;
+  let count = 0;
+  for (let i = 0; i < clusterCodes.length; i++) {
+    if (clusterCodes[i] === clusterId) count++;
+  }
+  return count;
+}
+
+function inferCellTypeLabel(clusterName, topMarkers = []) {
+  const markersSet = new Set(topMarkers.map((m) => m.gene));
+  if (markersSet.has('CD8A') || markersSet.has('CD8B')) return 'CD8 T cells';
+  if (markersSet.has('IL7R')) return 'CD4 T cells';
+  if (markersSet.has('MS4A1')) return 'B cells';
+  if (markersSet.has('CD14') || markersSet.has('LYZ')) return 'CD14+ monocytes';
+  if (markersSet.has('FCGR3A') || markersSet.has('MS4A7')) return 'FCGR3A+ monocytes';
+  if (markersSet.has('GNLY') || markersSet.has('NKG7')) return 'NK cells';
+  if (markersSet.has('FCER1A') || markersSet.has('CST3')) return 'Dendritic cells';
+  if (markersSet.has('PPBP')) return 'Megakaryocytes';
+  return `Cluster ${clusterName} (unannotated)`;
+}
+
+function updateLegend() {
+  const legendEl = document.getElementById('legend');
+  if (!legendEl || !manifest) return;
+
+  const mode = document.getElementById('colorModeSelect').value;
+
+  // R2: Continuous legend in real log-normalised units + zero & p99 clip notes
+  if (mode === 'gene') {
+    const gene = document.getElementById('geneSelect').value;
+    const geneMeta = manifest.genes?.[gene];
+    const hiVal = typeof geneMeta?.hi === 'number' ? geneMeta.hi.toFixed(2) : 'p99';
+
+    legendEl.innerHTML = `
+      <div><strong>${gene || 'Gene'}</strong> (log-norm)</div>
+      <div style="height:10px; border-radius:2px; margin:4px 0; background:linear-gradient(to right, #00224e, #575c6e, #b89b74, #fee838);"></div>
+      <div style="display:flex; justify-content:space-between; color:#ccc;">
+        <span>0 (zero)</span>
+        <span>≥ ${hiVal} (p99 clip)</span>
+      </div>
+      <div style="color:#9aa0a6; margin-top:2px;">0 = no detected counts; values ≥ p99 clip at max Cividis</div>
+    `;
+    return;
+  }
+
+  // R4 note when in uncertainty mode
+  if (mode === 'uncertainty') {
+    legendEl.innerHTML = `
+      <div><strong>Uncertainty</strong> (1 − k-NN purity, k=15)</div>
+      <div style="color:#ccc; margin-top:2px;">Higher uncertainty fades/desaturates points toward grey while keeping cluster hue readable.</div>
+    `;
+    return;
+  }
+
+  // R3: Categorical legend with cell-type annotation + marker evidence + cell count
+  const categories = manifest.obs?.cluster?.categories || [];
+  const rows = categories.map((catName, idx) => {
+    const vec = PALETTE[Math.min(idx, PALETTE.length - 1)];
+    const r = Math.round(vec.x * 255);
+    const g = Math.round(vec.y * 255);
+    const b = Math.round(vec.z * 255);
+    const topList = markers?.markers?.[catName]?.slice(0, 2) || [];
+    const markerText = topList.map((m) => m.gene).join(', ') || 'no markers';
+    const cellType = inferCellTypeLabel(catName, topList);
+    const nCells = getClusterCount(idx);
+    const active = uniforms.uHighlight.value === idx;
+
+    return `
+      <div data-cluster-idx="${idx}" style="display:flex; align-items:center; gap:6px; padding:2px 4px; border-radius:3px; cursor:pointer; background:${active ? 'rgba(255,255,255,0.14)' : 'transparent'};">
+        <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:rgb(${r},${g},${b}); flex-shrink:0;"></span>
+        <span style="flex:1;"><strong>${cellType}</strong> <span style="color:#aaa;">(${markerText})</span></span>
+        <span style="color:#bbb;">${nCells.toLocaleString()}</span>
+      </div>
+    `;
+  }).join('');
+
+  legendEl.innerHTML = `
+    <div style="margin-bottom:4px;"><strong>Clusters &amp; Marker Evidence</strong> <span style="color:#9aa0a6;">(click to highlight)</span></div>
+    <div style="max-height:150px; overflow-y:auto;">${rows}</div>
+  `;
+
+  legendEl.querySelectorAll('[data-cluster-idx]').forEach((row) => {
+    row.addEventListener('click', () => {
+      const idx = Number(row.getAttribute('data-cluster-idx'));
+      uniforms.uHighlight.value = uniforms.uHighlight.value === idx ? -1.0 : idx;
+      updateLegend();
+    });
+  });
 }
