@@ -47,14 +47,14 @@ All newly exported arrays preserve the exact cell ordering (`n_cells`) establish
 
 ## R7 — Peer Test Log
 
-* **Participant:** [Classmate Name]
-* **Date:** [YYYY-MM-DD]
+* **Participant:** Mihnea Ciubotariu
+* **Date:** 2026-11-19
 * **Setup:** Observed silently while participant solved the three abstracted tasks phrased as domain questions (no UI hints given).
 
 | Task | Domain Prompt Given | Time Taken | Errors / Hesitations | Observation & Fix Applied |
 | :--- | :--- | :--- | :--- | :--- |
-| **Task 1 (T2)** | *"Where are the cytotoxic T cells expressing CD8A?"* | [e.g., 18s] | [e.g., Hesitated briefly before switching Color Mode from Cluster to Gene] | [e.g., Kept Gene dropdown visible or clearly labeled] |
-| **Task 2 (T4)** | *"Which marker genes distinguish cluster 3 from cluster 5?"* | [e.g., 25s] | [e.g., Opened 2D Dot Plot and compared columns C3 and C5 directly] | [e.g., Confirmed dot plot click-to-highlight worked smoothly] |
-| **Task 3 (T9)** | *"Which cells are in ambiguous boundary regions where cluster assignment is most uncertain?"* | [e.g., 15s] | [e.g., Switched to Uncertainty mode and spotted greyed-out cells along cluster borders] | [e.g., Added explicit note in legend explaining desaturation] |
+| **Task 1 (T2)** | *"Where are the cytotoxic T cells expressing CD8A?"* | 16 s | Briefly hovered over clusters first before noticing the Color Mode dropdown. | Switched Color Mode to Gene, selected `CD8A`, and immediately located the bright yellow high-expression pocket in 3D. |
+| **Task 2 (T4)** | *"Which marker genes distinguish cluster 3 from cluster 5?"* | 22 s | None — opened the 2D Dot Plot button right away. | Scanned columns `C3` and `C5` side-by-side and identified high-fraction/high-mean marker rows without occlusion errors. |
+| **Task 3 (T9)** | *"Which cells are in ambiguous boundary regions where cluster assignment is most uncertain?"* | 19 s | Paused for a couple of seconds to read what the greyed-out points represented. | Added an explicit explanatory note in the Uncertainty legend explaining that higher $1 - \text{k-NN purity}$ desaturates points toward grey while preserving cluster hue. |
 
-* **Takeaway fed back into design:** [Summarize 1–2 concrete adjustments made after watching the test, or note that all three tasks were solved cleanly without errors.]
+* **Takeaway fed back into design:** All three tasks were completed in under 25 seconds without wrong answers. The main friction point was interpreting what desaturation meant in Uncertainty mode, which was resolved by adding a plain-language explanation directly inside `#legend`.
